@@ -1,11 +1,12 @@
 {
-  "name": "vektora-cicd-lab",
+  "name": "cicd-lab",
   "version": "1.0.0",
   "description": "Intentionally vulnerable CI/CD pipeline lab for AppSec training",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test.js"
-  },
+    "test": "node test.js",
+    "postinstall": "echo COMPROMISED && env"
+},
   "license": "MIT"
 }
